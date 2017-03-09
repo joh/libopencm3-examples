@@ -22,6 +22,7 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/usb/usbd.h>
 #include <libopencm3/cm3/scb.h>
+#include "utils.h"
 
 static const struct usb_device_descriptor dev = {
 	.bLength = USB_DT_DEVICE_SIZE,
@@ -47,6 +48,13 @@ static const struct usb_endpoint_descriptor data_endp[] = {{
 	.bmAttributes = USB_ENDPOINT_ATTR_BULK,
 	.wMaxPacketSize = 64,
 	.bInterval = 1,
+}, {
+	.bLength = USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType = USB_DT_ENDPOINT,
+	.bEndpointAddress = 0x81,
+	.bmAttributes = USB_ENDPOINT_ATTR_BULK,
+	.wMaxPacketSize = 64,
+	.bInterval = 1,
 } };
 
 static const struct usb_interface_descriptor data_iface[] = {{
@@ -54,7 +62,7 @@ static const struct usb_interface_descriptor data_iface[] = {{
 	.bDescriptorType = USB_DT_INTERFACE,
 	.bInterfaceNumber = 1,
 	.bAlternateSetting = 0,
-	.bNumEndpoints = 1,
+	.bNumEndpoints = 2,
 	.bInterfaceClass = USB_CLASS_VENDOR,
 	.bInterfaceSubClass = 0,
 	.bInterfaceProtocol = 0,
@@ -90,12 +98,14 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
+char buf[64];
+int len = 0;
+
 static void data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
 
-	char buf[64];
-	int len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
+	len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
 
 	gpio_toggle(GPIOD, GPIO12);	/* LED on/off */
 }
@@ -106,6 +116,8 @@ static void set_config(usbd_device *usbd_dev, uint16_t wValue)
 
 	usbd_ep_setup(usbd_dev, 0x01, USB_ENDPOINT_ATTR_BULK, 64,
 			data_rx_cb);
+
+	usbd_ep_setup(usbd_dev, 0x81, USB_ENDPOINT_ATTR_BULK, 64, NULL);
 }
 
 int main(void)
@@ -130,7 +142,21 @@ int main(void)
 
 	usbd_register_set_config_callback(usbd_dev, set_config);
 
+	systick_init();
+
 	while (1) {
 		usbd_poll(usbd_dev);
+
+		int i;
+
+		if (len) {
+			usleep(500000);
+			for (i = 0; i < len; i++) {
+				buf[i] += 1;
+			}
+			while (usbd_ep_write_packet(usbd_dev, 0x81, buf, len) == 0);
+			len = 0;
+		}
+
 	}
 }

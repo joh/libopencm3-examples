@@ -19,6 +19,18 @@ if dev is None:
 
 dev.set_configuration()
 
-cmd = 0x1
-dev.write(cmd, "1")
+i = 0
 
+while True:
+    buf = array.array('B', range(i, i+4))
+    bytes_written = dev.write(0x1, buf)
+
+    print("wrote {} bytes: {}".format(bytes_written, buf))
+
+    buf = dev.read(0x81, bytes_written)
+
+    print("read {} bytes: {}".format(len(buf), buf))
+
+    # time.sleep(1)
+
+    i += 1
