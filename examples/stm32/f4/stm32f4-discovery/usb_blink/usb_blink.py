@@ -17,20 +17,71 @@ if dev is None:
     print("Couldn't find device")
     sys.exit(2)
 
-dev.set_configuration()
+# dev.set_configuration()
 
-i = 0
+def bulk():
+    print("bulk")
 
-while True:
-    buf = array.array('B', range(i, i+4))
-    bytes_written = dev.write(0x1, buf)
+    data = [1,2,3,4]
+    n = dev.write(0x01, data)
+    print("wrote {} bytes: {}".format(n, data))
 
-    print("wrote {} bytes: {}".format(bytes_written, buf))
+    data = dev.read(0x81, 4)
+    print("read {} bytes: {}".format(len(data), data))
 
-    buf = dev.read(0x81, bytes_written)
+def ctrl_on():
+    print("ctrl_on")
+    bmRequestType = usb.util.build_request_type(
+            usb.util.CTRL_OUT,
+            usb.util.CTRL_TYPE_VENDOR,
+            usb.util.CTRL_RECIPIENT_ENDPOINT)
+    dev.ctrl_transfer(bmRequestType, 0x11)
 
-    print("read {} bytes: {}".format(len(buf), buf))
+def ctrl_off():
+    print("ctrl_off")
+    bmRequestType = usb.util.build_request_type(
+            usb.util.CTRL_OUT,
+            usb.util.CTRL_TYPE_VENDOR,
+            usb.util.CTRL_RECIPIENT_ENDPOINT)
+    dev.ctrl_transfer(bmRequestType, 0x12)
 
-    # time.sleep(1)
+def ctrl_data():
+    print("ctrl_data")
+    bmRequestType = usb.util.build_request_type(
+            usb.util.CTRL_OUT,
+            usb.util.CTRL_TYPE_VENDOR,
+            usb.util.CTRL_RECIPIENT_ENDPOINT)
 
-    i += 1
+    # Write data to device buf
+    data = array.array('B', [1, 2, 3, 4, 5, 6])
+    n = dev.ctrl_transfer(bmRequestType, 0x13, data_or_wLength=data)
+
+    print("wrote {} bytes: {}".format(n, data))
+
+    # Read data back from device buf
+    bmRequestType = usb.util.build_request_type(
+            usb.util.CTRL_IN,
+            usb.util.CTRL_TYPE_VENDOR,
+            usb.util.CTRL_RECIPIENT_ENDPOINT)
+
+    # Write data to device buf
+    data = dev.ctrl_transfer(bmRequestType, 0x93, data_or_wLength=6)
+
+    print("read {} bytes: {}".format(len(data), data))
+
+
+if __name__ == '__main__':
+    cmd = "bulk"
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+
+    if cmd == "bulk":
+        bulk()
+    elif cmd == "ctrl_on":
+        ctrl_on()
+    elif cmd == "ctrl_off":
+        ctrl_off()
+    elif cmd == "ctrl_data":
+        ctrl_data()
+    else:
+        print("Invalid command: {}".format(cmd))

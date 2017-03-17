@@ -98,16 +98,65 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
-char buf[64];
+uint8_t data_buf[6];
+
+static int control_request(usbd_device *usbd_dev,
+		struct usb_setup_data *req, uint8_t **buf, uint16_t *len,
+		void (**complete)(usbd_device *usbd_dev, struct usb_setup_data *req))
+{
+	(void)complete;
+	(void)buf;
+	(void)usbd_dev;
+	(void)len;
+
+	switch (req->bRequest) {
+		case 0x11:
+			/* Set */
+			gpio_set(GPIOD, GPIO13);
+			return 1;
+		case 0x12:
+			/* Clear */
+			gpio_clear(GPIOD, GPIO13);
+			return 1;
+		case 0x13:
+			/* Data input */
+			if (req->wLength != 6)
+				return 0;
+			for (int i = 0; i < req->wLength; i++) {
+				data_buf[i] = (*buf)[i];
+			}
+			gpio_set(GPIOD, GPIO14);
+			return 1;
+		case 0x93:
+			/* Data output */
+			if (req->wLength != 6)
+				return 0;
+			for (int i = 0; i < req->wLength; i++) {
+				(*buf)[i] = data_buf[i];
+			}
+			gpio_clear(GPIOD, GPIO14);
+			return 1;
+		default:
+			break;
+	}
+
+	return 0;
+}
+
+char bulk_buf[64];
 int len = 0;
 
 static void data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
 
-	len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
+	len = usbd_ep_read_packet(usbd_dev, 0x01, bulk_buf, 64);
 
 	gpio_toggle(GPIOD, GPIO12);	/* LED on/off */
+
+	if (len) {
+		while (usbd_ep_write_packet(usbd_dev, 0x81, bulk_buf, len) == 0);
+	}
 }
 
 static void set_config(usbd_device *usbd_dev, uint16_t wValue)
@@ -118,6 +167,12 @@ static void set_config(usbd_device *usbd_dev, uint16_t wValue)
 			data_rx_cb);
 
 	usbd_ep_setup(usbd_dev, 0x81, USB_ENDPOINT_ATTR_BULK, 64, NULL);
+
+	usbd_register_control_callback(
+			usbd_dev,
+			USB_REQ_TYPE_VENDOR | USB_REQ_TYPE_ENDPOINT,
+			USB_REQ_TYPE_TYPE | USB_REQ_TYPE_RECIPIENT,
+			control_request);
 }
 
 int main(void)
@@ -134,7 +189,7 @@ int main(void)
 			GPIO9 | GPIO11 | GPIO12);
 	gpio_set_af(GPIOA, GPIO_AF10, GPIO9 | GPIO11 | GPIO12);
 
-	gpio_mode_setup(GPIOD, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO12);
+	gpio_mode_setup(GPIOD, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO12 | GPIO13 | GPIO14 | GPIO15);
 
 	usbd_dev = usbd_init(&otgfs_usb_driver, &dev, &config,
 			usb_strings, 3,
@@ -146,17 +201,5 @@ int main(void)
 
 	while (1) {
 		usbd_poll(usbd_dev);
-
-		int i;
-
-		if (len) {
-			usleep(500000);
-			for (i = 0; i < len; i++) {
-				buf[i] += 1;
-			}
-			while (usbd_ep_write_packet(usbd_dev, 0x81, buf, len) == 0);
-			len = 0;
-		}
-
 	}
 }
